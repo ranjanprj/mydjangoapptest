@@ -1,0 +1,99 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app
+  namespace: default
+spec:
+  ports:
+  - port: 8000
+  type: LoadBalancer
+  selector:
+    app: app
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: app
+  template:
+    metadata:
+      labels:
+        app: app
+    spec:
+      securityContext:
+        runAsUser: 1000
+      containers:
+      - name: app
+        image: app-image
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: user
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: password
+        # command: ['/bin/sh', '-c', 'python src/project/manage.py migrate --no-input']
+      initContainers:
+      - name: wait-for-database
+        image: app-image
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: user
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: password
+        command: ['python', 'src/project/manage.py', 'wait_for_database']
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "250m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+        ports:
+        - containerPort: 8000
+      - name: migrate-database
+        image: app-image
+        env:
+        - name: POSTGRES_USER
+          valueFrom: 
+           secretKeyRef:
+            name: postgres-credentials
+            key: user
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+           secretKeyRef: 
+            name: postgres-credentials
+            key: password    
+        command:
+        - /bin/bash
+        - -c
+        - sleep 30 &&
+          echo "Begin Migration ..." &&
+          python src/project/manage.py migrate --noinput &&
+          echo "Migration Completed" &&
+          sleep 5
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "250m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+        ports:
+        - containerPort: 8000
